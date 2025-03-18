@@ -214,18 +214,20 @@ variable "compact_placement" {
 
 variable "placement_policy" {
   description = <<-EOT
-  Group placement policy to use for the node pool's nodes. `COMPACT` is the only supported value for `type` currently. `name` is the name of the placement policy.
+  Group placement policy to use for the node pool's nodes. `COMPACT` is the only supported value for `type` currently. `name` is the name of the placement policy. `tpu_topology` is the TPU placement topology for pod slice node pool.
   It is assumed that the specified policy exists. To create a placement policy refer to https://cloud.google.com/sdk/gcloud/reference/compute/resource-policies/create/group-placement.
   Note: Placement policies have the [following](https://cloud.google.com/compute/docs/instances/placement-policies-overview#restrictions-compact-policies) restrictions.
   EOT
 
   type = object({
-    type = string
-    name = optional(string)
+    type         = string
+    name         = optional(string)
+    tpu_topology = optional(string)
   })
   default = {
-    type = null
-    name = null
+    type         = null
+    name         = null
+    tpu_topology = null
   }
   validation {
     condition     = var.placement_policy.type == null || try(contains(["COMPACT"], var.placement_policy.type), false)
@@ -432,4 +434,10 @@ variable "enable_private_nodes" {
   description = "Whether nodes have internal IP addresses only."
   type        = bool
   default     = false
+}
+
+variable "num_node_pools" {
+  description = "Number of node pools to create. For TPUs, this is the number of slices."
+  type        = number
+  default     = 1
 }

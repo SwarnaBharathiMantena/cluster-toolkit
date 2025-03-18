@@ -29,7 +29,7 @@ metadata:
   name: "a3-ultra-tas"
 spec:
   nodeLabels:
-    cloud.google.com/gke-nodepool: ${node_pool_name}
+    cloud.google.com/gke-nodepool: ${node_pool_name_prefix}
   topologyName: "gke-default"
   tolerations:
   - key: "nvidia.com/gpu"
@@ -42,7 +42,7 @@ metadata:
   name: "a3-ultra"
 spec:
   nodeLabels:
-    cloud.google.com/gke-nodepool: ${node_pool_name}
+    cloud.google.com/gke-nodepool: ${node_pool_name_prefix}
 ---
 apiVersion: kueue.x-k8s.io/v1beta1
 kind: ClusterQueue

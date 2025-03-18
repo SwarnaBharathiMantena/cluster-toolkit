@@ -70,7 +70,9 @@ data "google_container_cluster" "gke_cluster" {
 resource "google_container_node_pool" "node_pool" {
   provider = google-beta
 
-  name           = coalesce(var.name, "${var.machine_type}-${local.module_unique_id}")
+  count = var.num_node_pools
+
+  name           = var.num_node_pools == 1 ? coalesce(var.name, join("-", [var.machine_type, local.module_unique_id])) : join("-", [coalesce(var.name, join("-", [var.machine_type, local.module_unique_id])), count.index])
   cluster        = var.cluster_id
   node_locations = var.zones
 
@@ -102,8 +104,9 @@ resource "google_container_node_pool" "node_pool" {
   dynamic "placement_policy" {
     for_each = var.placement_policy.type != null ? [1] : []
     content {
-      type        = var.placement_policy.type
-      policy_name = var.placement_policy.name
+      type         = var.placement_policy.type
+      policy_name  = var.placement_policy.name
+      tpu_topology = var.placement_policy.tpu_topology
     }
   }
 
@@ -349,6 +352,10 @@ resource "google_container_node_pool" "node_pool" {
     precondition {
       condition     = !(var.enable_queued_provisioning == true && var.autoscaling_total_min_nodes != 0)
       error_message = "autoscaling_total_min_nodes should be 0 when enable_queued_provisioning is true."
+    }
+    precondition {
+      condition     = !(var.placement_policy.type != null && var.num_node_pools > 1 && local.has_gpu)
+      error_message = "Multiple GKE node pools for GPUs is supported only when placement policy is not set."
     }
   }
 }

@@ -14,9 +14,9 @@
   * limitations under the License.
   */
 
-output "node_pool_name" {
+output "node_pool_names" {
   description = "Name of the node pool."
-  value       = google_container_node_pool.node_pool.name
+  value       = google_container_node_pool.node_pool[*].name
 }
 
 locals {
@@ -24,15 +24,16 @@ locals {
   last_digit  = trimsuffix(try(local.machine_vals[2], 0), "g")
 
   # Shared core machines only have 1 cpu allocatable, even if they have 2 cpu capacity
-  vcpu        = local.machine_shared_core ? 1 : local.is_a_series ? local.last_digit * 12 : local.last_digit
-  useable_cpu = local.set_threads_per_core ? local.threads_per_core * local.vcpu / 2 : local.vcpu
+  # Logic updated to work with TPUs
+  vcpu        = local.has_gpu ? (local.machine_shared_core ? 1 : local.is_a_series ? local.last_digit * 12 : local.last_digit) : 0
+  useable_cpu = local.has_gpu ? (local.set_threads_per_core ? local.threads_per_core * local.vcpu / 2 : local.vcpu) : 0
 
   # allocatable resource definition: https://cloud.google.com/kubernetes-engine/docs/concepts/plan-node-sizes#cpu_reservations
   second_core       = local.useable_cpu > 1 ? 1 : 0
   third_fourth_core = local.useable_cpu == 3 ? 1 : local.useable_cpu > 3 ? 2 : 0
   cores_above_four  = local.useable_cpu > 4 ? local.useable_cpu - 4 : 0
 
-  allocatable_cpu = 0.94 + (0.99 * local.second_core) + (0.995 * local.third_fourth_core) + (0.9975 * local.cores_above_four)
+  allocatable_cpu = local.has_gpu ? 0.94 + (0.99 * local.second_core) + (0.995 * local.third_fourth_core) + (0.9975 * local.cores_above_four) : 0
 }
 
 output "allocatable_cpu_per_node" {
@@ -61,7 +62,7 @@ locals {
     NO_SCHEDULE        = "NoSchedule"
     NO_EXECUTE         = "NoExecute"
   }
-  taints = google_container_node_pool.node_pool.node_config[0].taint
+  taints = google_container_node_pool.node_pool[0].node_config[0].taint
   tolerations = [for taint in local.taints : {
     key      = taint.key
     operator = "Equal"
