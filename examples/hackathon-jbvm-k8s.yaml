@@ -1,0 +1,98 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+blueprint_name: hackathon-jbvm-k8s
+
+vars:
+  project_id: !!null # User must provide this
+  deployment_name: hackathon-k8s
+  region: us-central1
+  zone: us-central1-a
+
+deployment_groups:
+  - group: primary
+    modules:
+      # 1. VPC Network
+      - id: network
+        source: modules/network/vpc
+
+      # 2. Firewall Rules to allow SSH and K8s API
+      - id: firewall
+        source: modules/network/firewall-rules
+        use: [network]
+        settings:
+          ingress_rules:
+            - name: allow-ssh-and-k8s-api
+              description: "Allow SSH for Ansible and 6443 for kubectl/gcluster"
+              source_ranges: ["0.0.0.0/0"] # Open for Hackathon E2E demo
+              allow:
+                - protocol: tcp
+                  ports: ["22", "6443"]
+            - name: allow-k8s-internal
+              description: "Allow all internal cluster traffic between nodes"
+              source_ranges: ["10.0.0.0/8"] # Covers standard GCE internal VPC IPs
+              allow:
+                - protocol: tcp
+                - protocol: udp
+                - protocol: icmp
+
+      # 3. SSH Key Generator
+      - id: ssh-key-generator
+        source: modules/compute/ssh-key
+        settings:
+          name: k8s-hackathon-ssh
+
+      # 4. Kubernetes Control Plane Node (Master)
+      - id: k8s-master
+        source: modules/compute/vm-instance
+        use: [network]
+        settings:
+          name_prefix: master
+          instance_count: 1
+          machine_type: e2-standard-4
+          instance_image:
+            project: ubuntu-os-cloud
+            family: ubuntu-2204-lts
+          metadata:
+            ssh-keys: "ubuntu:$(ssh-key-generator.public_key_openssh)"
+          # We need external IPs so the deployer machine can run Ansible on it
+          disable_public_ips: false
+
+      # 5. Kubernetes Worker Nodes
+      - id: k8s-workers
+        source: modules/compute/vm-instance
+        use: [network]
+        settings:
+          name_prefix: worker
+          instance_count: 2
+          machine_type: e2-standard-8
+          instance_image:
+            project: ubuntu-os-cloud
+            family: ubuntu-2204-lts
+          metadata:
+            ssh-keys: "ubuntu:$(ssh-key-generator.public_key_openssh)"
+          disable_public_ips: false
+
+      # 6. Bootstrap Vanilla K8s via Kubespray
+      - id: k8s-cluster
+        source: modules/scheduler/kubernetes-kubespray
+        settings:
+          control_plane_ips: $(k8s-master.external_ip)
+          control_plane_internal_ips: $(k8s-master.internal_ip)
+          worker_node_ips: $(k8s-workers.external_ip)
+          worker_node_internal_ips: $(k8s-workers.internal_ip)
+          ssh_user: ubuntu
+          ssh_private_key_path: $(ssh-key-generator.private_key_path)
+          kubeconfig_output_path: kubeconfig
+          k8s_version: v1.28.6
