@@ -18,14 +18,16 @@ import (
 	"fmt"
 	"hpc-toolkit/pkg/orchestrator"
 	"hpc-toolkit/pkg/orchestrator/gke"
+	"hpc-toolkit/pkg/orchestrator/kubernetes"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	clusterName string
-	location    string
-	projectID   string
+	clusterName    string
+	location       string
+	projectID      string
+	kubeconfigPath string
 )
 
 var gkeOrchestratorFactory = func() orchestrator.JobOrchestrator {
@@ -40,6 +42,11 @@ var JobCmd = &cobra.Command{
 	Short: "[EXPERIMENTAL/ALPHA] Manage jobs on the cluster. Alpha version and not yet supported for production use.",
 	Long:  `[EXPERIMENTAL/ALPHA] Manage jobs on the cluster. This is the alpha version of the feature and is under active development. The feature is not yet supported for production use.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if kubeconfigPath != "" {
+			orc = kubernetes.NewKubernetesOrchestrator(kubeconfigPath)
+			return nil
+		}
+
 		orc = gkeOrchestratorFactory()
 
 		ctx := loadContext()
@@ -71,6 +78,7 @@ func init() {
 	JobCmd.PersistentFlags().StringVarP(&clusterName, "cluster", "c", "", "Name of the GKE cluster.")
 	JobCmd.PersistentFlags().StringVarP(&location, "location", "l", "", "Location (region or zone) of the GKE cluster.")
 	JobCmd.PersistentFlags().StringVarP(&projectID, "project", "p", "", "Google Cloud Project ID.")
+	JobCmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file for generic Kubernetes clusters (bypasses GKE/GCP integration).")
 
 	JobCmd.AddCommand(SubmitCmd)
 	JobCmd.AddCommand(CancelJobCmd)

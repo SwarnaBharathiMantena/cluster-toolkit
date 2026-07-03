@@ -1,0 +1,29 @@
+[all]
+%{ for idx, ext_ip in control_plane_ips ~}
+master-${idx} ansible_host=${ext_ip} ip=${control_plane_internal_ips[idx]} access_ip=${control_plane_internal_ips[idx]} ansible_user=${ssh_user} ansible_ssh_private_key_file=${ssh_private_key_path} ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+%{ endfor ~}
+%{ for idx, ext_ip in worker_node_ips ~}
+worker-${idx} ansible_host=${ext_ip} ip=${worker_node_internal_ips[idx]} access_ip=${worker_node_internal_ips[idx]} ansible_user=${ssh_user} ansible_ssh_private_key_file=${ssh_private_key_path} ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+%{ endfor ~}
+
+[kube_control_plane]
+%{ for idx, _ in control_plane_ips ~}
+master-${idx}
+%{ endfor ~}
+
+[etcd]
+%{ for idx, _ in control_plane_ips ~}
+master-${idx}
+%{ endfor ~}
+
+[kube_node]
+%{ for idx, _ in worker_node_ips ~}
+worker-${idx}
+%{ endfor ~}
+
+[calico_rr]
+
+[k8s_cluster:children]
+kube_control_plane
+kube_node
+calico_rr

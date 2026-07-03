@@ -1,0 +1,106 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+blueprint_name: hackathon-cpu-k8s
+
+vars:
+  project_id: hpc-toolkit-gsc # User must provide this
+  deployment_name: hkthn-cpu-k8s-1
+  region: us-central1
+  zone: us-central1-a
+
+deployment_groups:
+  - group: primary
+    modules:
+      # 1. VPC Network: Creates an isolated Virtual Private Cloud (VPC) network
+      # and subnet with Cloud NAT/Router, allowing VMs to securely access the internet.
+      - id: network
+        source: modules/network/vpc
+
+      # 2. Firewall Rules: Opens port 22 (SSH) for Ansible bootstrapping,
+      # port 6443 (Kubernetes API) for external kubectl access, and allows
+      # all internal traffic between cluster nodes.
+      - id: firewall
+        source: modules/network/firewall-rules
+        use: [network]
+        settings:
+          ingress_rules:
+            - name: allow-ssh-and-k8s-api-cpu
+              description: "Allow SSH for Ansible and 6443 for kubectl/gcluster"
+              source_ranges: ["0.0.0.0/0"] # Open for Hackathon E2E demo
+              allow:
+                - protocol: tcp
+                  ports: ["22", "6443"]
+            - name: allow-k8s-internal-cpu
+              description: "Allow all internal cluster traffic between nodes"
+              source_ranges: ["10.0.0.0/8"] # Covers standard GCE internal VPC IPs
+              allow:
+                - protocol: tcp
+                - protocol: udp
+                - protocol: icmp
+
+      # 3. SSH Key Generator: Generates a temporary SSH key pair locally.
+      # The private key is saved to disk to allow Ansible to authenticate with the VMs.
+      - id: ssh-key-generator
+        source: modules/compute/ssh-key
+        settings:
+          name: k8s-hackathon-cpu-ssh
+
+      # 4. Kubernetes Control Plane Node (Master): Provisions a GCE VM (e2-standard-4)
+      # to act as the K8s Master. OS Login is disabled to allow custom SSH key access.
+      - id: k8s-master
+        source: modules/compute/vm-instance
+        use: [network]
+        settings:
+          name_prefix: cpu-master
+          instance_count: 1
+          machine_type: e2-standard-4
+          instance_image:
+            project: ubuntu-os-cloud
+            family: ubuntu-2204-lts
+          metadata:
+            ssh-keys: "ubuntu:$(ssh-key-generator.public_key_openssh)"
+            enable-oslogin: "FALSE"
+          disable_public_ips: false
+
+      # 5. Kubernetes Worker Nodes (CPUs): Provisions standard GCE VMs (e2-standard-4)
+      # to act as K8s Workers where workloads will be scheduled.
+      - id: k8s-workers
+        source: modules/compute/vm-instance
+        use: [network]
+        settings:
+          name_prefix: cpu-worker
+          instance_count: 2
+          machine_type: e2-standard-4
+          instance_image:
+            project: ubuntu-os-cloud
+            family: ubuntu-2204-lts
+          metadata:
+            ssh-keys: "ubuntu:$(ssh-key-generator.public_key_openssh)"
+            enable-oslogin: "FALSE"
+          disable_public_ips: false
+
+      # 6. Bootstrap Vanilla K8s via Kubespray: Uses Kubespray (Ansible) to install
+      # Containerd, Kubelet, Kubeadm, and Calico CNI, bootstrapping the K8s cluster.
+      - id: k8s-cluster
+        source: modules/scheduler/kubernetes-kubespray
+        settings:
+          control_plane_ips: $(k8s-master.external_ip)
+          control_plane_internal_ips: $(k8s-master.internal_ip)
+          worker_node_ips: $(k8s-workers.external_ip)
+          worker_node_internal_ips: $(k8s-workers.internal_ip)
+          ssh_user: ubuntu
+          ssh_private_key_path: $(ssh-key-generator.private_key_path)
+          kubeconfig_output_path: kubeconfig
+          k8s_version: v1.28.6
