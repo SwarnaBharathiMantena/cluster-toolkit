@@ -34,6 +34,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"hpc-toolkit/cmd/cluster"
+	"hpc-toolkit/cmd/clusterdirector"
 	"hpc-toolkit/cmd/job"
 )
 
@@ -80,6 +81,7 @@ func init() {
 	}
 
 	rootCmd.AddCommand(cluster.ClusterCmd)
+	rootCmd.AddCommand(clusterdirector.ClusterDirectorCmd)
 	rootCmd.AddCommand(job.JobCmd)
 }
 
