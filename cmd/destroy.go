@@ -43,7 +43,8 @@ func init() {
 	rootCmd.AddCommand(
 		addGroupSelectionFlags(
 			addAutoApproveFlag(
-				addArtifactsDirFlag(destroyCmd))))
+				addArtifactsDirFlag(
+					addClusterDirectorFlags(destroyCmd)))))
 	destroyCmd.Flags().BoolVar(&robustDestroy, "robust", false, "Perform a robust destroy, including firewall rule cleanup.")
 }
 
@@ -87,6 +88,12 @@ func runDestroyCmd(cmd *cobra.Command, args []string) {
 	}
 
 	checkErr(shell.ValidateDeploymentDirectory(bp.Groups, deplRoot), ctx)
+
+	// Update the Cluster Director record before anything is torn down, so the
+	// API call still refers to live resources. A full destroy deregisters; a
+	// partial one shrinks the registration to what survives. This sits outside
+	// destroyRunner because that retries.
+	checkErr(deregisterClusterDirector(cmd, deplRoot, artifactsDir, bp), ctx)
 
 	destroyRunner(deplRoot, artifactsDir, bp, ctx)
 }

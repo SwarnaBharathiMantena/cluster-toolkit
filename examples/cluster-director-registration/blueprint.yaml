@@ -1,0 +1,45 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+---
+
+blueprint_name: ctkdemo
+
+# This blueprint contains no registration wiring of any kind. `gcluster deploy`
+# registers the deployment into Cluster Director on its own, and
+# `gcluster destroy` deregisters it. Pass
+# --skip-cluster-director-registration to either command to opt out.
+vars:
+  project_id:  ## Set GCP Project ID Here ##
+  deployment_name: ctkdemo
+  region: us-central1
+  zone: us-central1-a
+
+deployment_groups:
+- group: primary
+  modules:
+  - id: network
+    source: modules/network/vpc
+
+  - id: ctk_bucket
+    source: modules/file-system/cloud-storage-bucket
+    settings:
+      random_suffix: true
+
+  - id: compute
+    source: modules/compute/vm-instance
+    use: [network]
+    settings:
+      instance_count: 2
+      machine_type: e2-standard-2

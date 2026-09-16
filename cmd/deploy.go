@@ -38,7 +38,8 @@ func addDeployFlags(c *cobra.Command) *cobra.Command {
 		addGroupSelectionFlags(
 			addAutoApproveFlag(
 				addArtifactsDirFlag(
-					addCreateFlags(c)))))
+					addClusterDirectorFlags(
+						addCreateFlags(c))))))
 }
 
 func init() {
@@ -127,6 +128,10 @@ func doDeploy(cmd *cobra.Command, deplRoot string, skipSecurity bool) {
 					Path: config.Root.Groups.At(ig).Name}, ctx)
 		}
 	}
+	// Registration runs last, once every group has applied, so the resources
+	// it imports into Cluster Director are guaranteed to exist.
+	checkErr(registerClusterDirector(cmd, deplRoot, artDir, bp), ctx)
+
 	logging.Info("\n###############################")
 	printAdvancedInstructionsMessage(deplRoot)
 }
