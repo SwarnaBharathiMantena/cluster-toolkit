@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: schedule-daemon-script
+  namespace: kube-system
+data:
+  schedule-daemon.sh: |
+${indent(4, file(script_path))}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: schedule-daemon
+  namespace: kube-system
+  labels:
+    app: schedule-daemon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: schedule-daemon
+  template:
+    metadata:
+      labels:
+        app: schedule-daemon
+      annotations:
+        checksum/script: "${sha256(file(script_path))}"
+    spec:
+      containers:
+        - name: daemon
+          image: bash:5.2
+          command: ["/bin/bash", "/scripts/schedule-daemon.sh"]
+          env:
+            - name: COHORT_NAME
+              value: "${cohort_name}"
+          volumeMounts:
+            - name: script-vol
+              mountPath: /scripts
+      volumes:
+        - name: script-vol
+          configMap:
+            name: schedule-daemon-script
+            defaultMode: 0755

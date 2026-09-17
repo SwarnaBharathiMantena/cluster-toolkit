@@ -1,0 +1,36 @@
+# ==============================================================================
+# Cluster-Specific Deployment Overlay: cpu-team-alpha
+# ==============================================================================
+# Usage:
+#   # Full Cluster Deploy (Day 1 or Full Re-sync without drift):
+#   ./gcluster deploy examples/shared-cpu-clusters-cory-model/base.yaml \
+#     -d examples/shared-cpu-clusters-cory-model/cpu-team-alpha/deployment-vars.yaml
+#
+#   # Targeted Day-2 Quota Update:
+#   ./gcluster deploy examples/shared-cpu-clusters-cory-model/base.yaml \
+#     -d examples/shared-cpu-clusters-cory-model/cpu-team-alpha/deployment-vars.yaml \
+#     -w --only=08-quota-namespaces
+# ==============================================================================
+
+vars:
+  project_id: hpc-toolkit-gsc
+  deployment_name: shared-cpu-cory-01
+  region: us-central1
+  zone: us-central1-b
+
+  # Child directory parallel to base.yaml parking all kubectl-apply manifests & scripts
+  cluster_dir: "./cpu-team-alpha"
+
+  # Compute / Node Pool Sizing
+  machine_type: e2-standard-4
+  node_count: 2
+  authorized_cidr: "0.0.0.0/0"
+
+  # Parameterized Kueue Quotas (Cory Comment #2: Nominal vs. 100% Borrowing Default)
+  cohort_name: "cpu-shared-cohort"
+  total_cpu_capacity: "32"
+  total_memory_capacity: "128Gi"
+  team_alpha_nominal_cpu: "16"
+  team_alpha_nominal_memory: "64Gi"
+  team_beta_nominal_cpu: "16"
+  team_beta_nominal_memory: "64Gi"

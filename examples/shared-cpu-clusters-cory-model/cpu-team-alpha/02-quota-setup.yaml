@@ -1,0 +1,7 @@
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: cpu-shared-flavor
+spec:
+  nodeLabels:
+    cloud.google.com/gke-nodepool: cpu-shared-pool
