@@ -1,0 +1,262 @@
+# Copyright 2026 "Google LLC"
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ==============================================================================
+# Shared Base Blueprint for TPU v6e: base.yaml (One per machine type)
+# ==============================================================================
+# Multi-machine-type directory structure:
+#   shared-tpu-clusters/
+#   ├── shared-tpu-v7x-clusters/
+#   │   ├── base.yaml                      # Single base blueprint for TPU v7x
+#   │   └── tpu7x-team-alpha/              # Parallel child directory (<machine-type>-<team>)
+#   │       └── ...
+#   └── shared-tpu-v6e-clusters/
+#       ├── base.yaml                      # Single base blueprint for TPU v6e
+#       └── tpu6e-team-alpha/              # Parallel child directory (<machine-type>-<team>)
+#           ├── deployment-vars.yaml       # Cluster variables (-d) including cluster_dir: "./tpu6e-team-alpha"
+#           ├── scripts/
+#           │   └── schedule-daemon.sh     # Shell script pushed to cluster via ConfigMap
+#           ├── 01-multi-nic.yaml          # Empty file (no-op for single-NIC TPU v6e)
+#           ├── 02-quota-setup.yaml
+#           ├── 03-kyverno.yaml
+#           ├── 04-priority-class.yaml
+#           ├── 05-time-limit-controller.yaml
+#           ├── 06-schedule-daemon.yaml.tftpl
+#           ├── 07-rbac.yaml
+#           ├── 08-quota-namespaces.yaml.tftpl
+#           └── 09-custom-addons.yaml
+# ==============================================================================
+
+blueprint_name: gke-shared-tpu-v6e-base-blueprint
+
+vars:
+  project_id: REQUIRED
+  deployment_name: REQUIRED
+  region: REQUIRED
+  zone: REQUIRED
+
+  # Parallel child directory that parks all numbered manifests & scripts
+  cluster_dir: REQUIRED
+
+  # TPU v6e Hardware & Reservation Defaults
+  machine_type: ct6e-standard-4t
+  num_slices: 2
+  tpu_topology: 2x4
+  reservation: REQUIRED
+  authorized_cidr: "0.0.0.0/0"
+
+  # Quota parameters (overridden per cluster in deployment-vars.yaml)
+  cohort_name: "tpuv6e-shared-cohort"
+  total_tpu_capacity: "64"
+  total_cpu_capacity: "180"
+  total_memory_capacity: "1200Gi"
+  team_alpha_nominal_tpu: "32"
+  team_alpha_nominal_cpu: "90"
+  team_alpha_nominal_memory: "600Gi"
+  team_beta_nominal_tpu: "32"
+  team_beta_nominal_cpu: "90"
+  team_beta_nominal_memory: "600Gi"
+
+deployment_groups:
+  # ============================================================================
+  # DAY-1: Core Cluster Infrastructure (TPU v6e)
+  # ============================================================================
+  - group: 00-cluster-infra
+    modules:
+      - id: network
+        source: modules/network/vpc
+        settings:
+          network_name: $(vars.deployment_name)-net
+          subnetworks:
+            - subnet_name: $(vars.deployment_name)-sub
+              subnet_region: $(vars.region)
+              subnet_ip: 192.168.0.0/18
+          secondary_ranges_list:
+            - subnetwork_name: $(vars.deployment_name)-sub
+              ranges:
+                - range_name: pods
+                  ip_cidr_range: 10.4.0.0/14
+                - range_name: services
+                  ip_cidr_range: 10.0.32.0/20
+
+      - id: node_pool_service_account
+        source: modules/project/service-account
+        settings:
+          name: np-sa
+          project_id: $(vars.project_id)
+          project_roles:
+            - logging.logWriter
+            - monitoring.metricWriter
+            - monitoring.viewer
+            - artifactregistry.reader
+            - storage.objectViewer
+
+      - id: workload_service_account
+        source: modules/project/service-account
+        settings:
+          name: wl-sa
+          project_id: $(vars.project_id)
+          project_roles:
+            - logging.logWriter
+            - monitoring.metricWriter
+            - storage.objectUser
+
+      - id: gke_cluster
+        source: modules/scheduler/gke-cluster
+        use: [network, workload_service_account]
+        settings:
+          project_id: $(vars.project_id)
+          region: $(vars.region)
+          version_prefix: "1.35."
+          release_channel: REGULAR
+          enable_dataplane_v2: true
+          enable_gcsfuse_csi: true
+          enable_private_nodes: true
+          enable_private_endpoint: false
+          system_node_pool_zones: [$(vars.zone)]
+          master_authorized_networks:
+            - display_name: allowed-access
+              cidr_block: $(vars.authorized_cidr)
+
+      - id: tpu_v6e_shared_pool
+        source: modules/compute/gke-node-pool
+        use: [gke_cluster, node_pool_service_account]
+        settings:
+          name: tpu-v6e-shared-pool
+          machine_type: $(vars.machine_type)
+          disk_type: hyperdisk-balanced
+          num_slices: $(vars.num_slices)
+          zones: [$(vars.zone)]
+          reservation_affinity:
+            consume_reservation_type: SPECIFIC_RESERVATION
+            specific_reservations:
+              - name: $(vars.reservation)
+          placement_policy:
+            type: COMPACT
+            tpu_topology: $(vars.tpu_topology)
+
+  # ============================================================================
+  # DAY-2: Modular Kubernetes Configuration Groups
+  # All numbered files live inside $(vars.cluster_dir)/ parallel to base.yaml
+  # ============================================================================
+  - group: 01-multi-nic
+    modules:
+      - id: apply_multi_nic
+        source: modules/management/kubectl-apply
+        settings:
+          cluster_id: projects/$(vars.project_id)/locations/$(vars.region)/clusters/$(vars.deployment_name)
+          apply_manifests:
+            - name: multi-nic
+              source: $(ghpc_stage(vars.cluster_dir))/01-multi-nic.yaml
+
+  - group: 02-quota-setup
+    modules:
+      - id: apply_quota_setup
+        source: modules/management/kubectl-apply
+        settings:
+          cluster_id: projects/$(vars.project_id)/locations/$(vars.region)/clusters/$(vars.deployment_name)
+          cert_manager:
+            install: true
+          kueue:
+            install: true
+            version: "0.17.1"
+            config_path: $(ghpc_stage(vars.cluster_dir))/02-quota-setup.yaml
+          jobset:
+            install: true
+
+  - group: 03-kyverno
+    modules:
+      - id: apply_kyverno
+        source: modules/management/kubectl-apply
+        settings:
+          cluster_id: projects/$(vars.project_id)/locations/$(vars.region)/clusters/$(vars.deployment_name)
+          apply_manifests:
+            - name: kyverno
+              source: $(ghpc_stage(vars.cluster_dir))/03-kyverno.yaml
+
+  - group: 04-priority-class
+    modules:
+      - id: apply_priority_class
+        source: modules/management/kubectl-apply
+        settings:
+          cluster_id: projects/$(vars.project_id)/locations/$(vars.region)/clusters/$(vars.deployment_name)
+          apply_manifests:
+            - name: priority-class
+              source: $(ghpc_stage(vars.cluster_dir))/04-priority-class.yaml
+
+  - group: 05-time-limit-controller
+    modules:
+      - id: apply_time_limit_controller
+        source: modules/management/kubectl-apply
+        settings:
+          cluster_id: projects/$(vars.project_id)/locations/$(vars.region)/clusters/$(vars.deployment_name)
+          apply_manifests:
+            - name: time-limit-controller
+              source: $(ghpc_stage(vars.cluster_dir))/05-time-limit-controller.yaml
+
+  # Cory Comment #3: Pushes $(vars.cluster_dir)/scripts/schedule-daemon.sh into the cluster
+  - group: 06-schedule-daemon
+    modules:
+      - id: apply_schedule_daemon
+        source: modules/management/kubectl-apply
+        settings:
+          cluster_id: projects/$(vars.project_id)/locations/$(vars.region)/clusters/$(vars.deployment_name)
+          apply_manifests:
+            - name: schedule-daemon
+              source: $(ghpc_stage(vars.cluster_dir))/06-schedule-daemon.yaml.tftpl
+              template_vars:
+                cohort_name: $(vars.cohort_name)
+                script_path: $(ghpc_stage(vars.cluster_dir))/scripts/schedule-daemon.sh
+
+  - group: 07-rbac
+    modules:
+      - id: apply_rbac
+        source: modules/management/kubectl-apply
+        settings:
+          cluster_id: projects/$(vars.project_id)/locations/$(vars.region)/clusters/$(vars.deployment_name)
+          apply_manifests:
+            - name: rbac
+              source: $(ghpc_stage(vars.cluster_dir))/07-rbac.yaml
+
+  # Cory Comment #2: Parameterized ClusterQueues (100%-borrowing default + nominal tenant queues)
+  - group: 08-quota-namespaces
+    modules:
+      - id: apply_quota_namespaces
+        source: modules/management/kubectl-apply
+        settings:
+          cluster_id: projects/$(vars.project_id)/locations/$(vars.region)/clusters/$(vars.deployment_name)
+          apply_manifests:
+            - name: quota-namespaces
+              source: $(ghpc_stage(vars.cluster_dir))/08-quota-namespaces.yaml.tftpl
+              template_vars:
+                cohort_name: $(vars.cohort_name)
+                total_tpu_capacity: $(vars.total_tpu_capacity)
+                total_cpu_capacity: $(vars.total_cpu_capacity)
+                total_memory_capacity: $(vars.total_memory_capacity)
+                team_alpha_nominal_tpu: $(vars.team_alpha_nominal_tpu)
+                team_alpha_nominal_cpu: $(vars.team_alpha_nominal_cpu)
+                team_alpha_nominal_memory: $(vars.team_alpha_nominal_memory)
+                team_beta_nominal_tpu: $(vars.team_beta_nominal_tpu)
+                team_beta_nominal_cpu: $(vars.team_beta_nominal_cpu)
+                team_beta_nominal_memory: $(vars.team_beta_nominal_memory)
+
+  - group: 09-custom-addons
+    modules:
+      - id: apply_custom_addons
+        source: modules/management/kubectl-apply
+        settings:
+          cluster_id: projects/$(vars.project_id)/locations/$(vars.region)/clusters/$(vars.deployment_name)
+          apply_manifests:
+            - name: custom-addons
+              source: $(ghpc_stage(vars.cluster_dir))/09-custom-addons.yaml

@@ -1,0 +1,19 @@
+apiVersion: networking.gke.io/v1
+kind: GKENetworkParamSet
+metadata:
+  name: tpu-v7x-dcn-paramset
+spec:
+  vpc: tpu7x-dcn-vpc-0
+  vpcSubnet: tpu7x-dcn-sub-0
+  deviceMode: NetDevice
+---
+apiVersion: networking.gke.io/v1
+kind: Network
+metadata:
+  name: tpu-v7x-dcn-net
+spec:
+  type: Device
+  parametersRef:
+    group: networking.gke.io
+    kind: GKENetworkParamSet
+    name: tpu-v7x-dcn-paramset

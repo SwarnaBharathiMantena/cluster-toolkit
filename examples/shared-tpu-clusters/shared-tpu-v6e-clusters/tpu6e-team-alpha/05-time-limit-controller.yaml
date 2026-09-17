@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: time-limit-controller-config
+  namespace: kube-system
+data:
+  max_runtime_hours: "24"
+  description: "Time Limit Controller configuration for TPU v6e shared cluster"

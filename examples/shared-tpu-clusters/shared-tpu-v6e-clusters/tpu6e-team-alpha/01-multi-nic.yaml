@@ -1,0 +1,1 @@
+# TPU v6e uses standard single-NIC VPC networking; empty manifest no-ops cleanly in group 01-multi-nic.

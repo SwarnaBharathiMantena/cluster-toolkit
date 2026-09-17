@@ -1,0 +1,52 @@
+# Copyright 2026 "Google LLC"
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ==============================================================================
+# Cluster Deployment Variables: tpu6e-team-alpha (-d flag)
+# ==============================================================================
+# Usage:
+#   ./gcluster deploy examples/shared-tpu-clusters/shared-tpu-v6e-clusters/base.yaml \
+#     -d examples/shared-tpu-clusters/shared-tpu-v6e-clusters/tpu6e-team-alpha/deployment-vars.yaml -w
+# ==============================================================================
+
+vars:
+  project_id: hpc-toolkit-gsc
+  deployment_name: tpu6e-team-alpha
+  region: southamerica-west1
+  zone: southamerica-west1-a
+
+  # Relative path from base.yaml to this parallel child cluster directory
+  cluster_dir: "./tpu6e-team-alpha"
+
+  machine_type: ct6e-standard-4t
+  num_slices: 2
+  tpu_topology: 2x4
+  reservation: projects/hpc-toolkit-gsc/reservations/tpu6e-team-alpha-res
+  authorized_cidr: "0.0.0.0/0"
+
+  # Cohort & Parameterized Quota Limits (Cory Comment #2)
+  cohort_name: "tpuv6e-shared-cohort"
+  total_tpu_capacity: "64"
+  total_cpu_capacity: "180"
+  total_memory_capacity: "1200Gi"
+
+  # Team Alpha nominal share
+  team_alpha_nominal_tpu: "32"
+  team_alpha_nominal_cpu: "90"
+  team_alpha_nominal_memory: "600Gi"
+
+  # Team Beta nominal share
+  team_beta_nominal_tpu: "32"
+  team_beta_nominal_cpu: "90"
+  team_beta_nominal_memory: "600Gi"
