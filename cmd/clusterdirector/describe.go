@@ -29,11 +29,33 @@ import (
 var describeCmd = &cobra.Command{
 	Use:     "describe",
 	Aliases: []string{"get"},
-	Short:   "Show a cluster registered in Cluster Director.",
-	Example: `  gcluster cluster-director describe --project my-project --region us-central1 \
-    --cluster-name ctktest`,
+	Short:   "Show a cluster registered in Cluster Director (or its nodes via 'describe nodes').",
+	Example: `  # Describe the registered cluster resource
+  gcluster cluster-director describe --project my-project --region us-central1 \
+    --cluster-name ctkdemo
+
+  # List the compute nodes associated with the registered cluster
+  gcluster cluster-director describe nodes --project my-project --region us-central1 \
+    --cluster-name ctkdemo`,
 	RunE:         runDescribe,
 	SilenceUsage: true,
+}
+
+var describeNodesCmd = &cobra.Command{
+	Use:     "nodes",
+	Aliases: []string{"node"},
+	Short:   "List the compute nodes associated with a cluster in Cluster Director.",
+	Long: `Query Cluster Director for the compute nodes currently associated with a
+registered cluster (for example, Compute Engine instances matched by the
+deployment's ghpc_deployment label selector, MIGs, or reservations).`,
+	Example: `  gcluster cluster-director describe nodes --project my-project --region us-central1 \
+    --cluster-name ctkdemo`,
+	RunE:         runDescribeNodes,
+	SilenceUsage: true,
+}
+
+func init() {
+	describeCmd.AddCommand(describeNodesCmd)
 }
 
 func runDescribe(cmd *cobra.Command, args []string) error {
@@ -60,6 +82,35 @@ func runDescribe(cmd *cobra.Command, args []string) error {
 	payload, err := json.MarshalIndent(cluster, "", "  ")
 	if err != nil {
 		return fmt.Errorf("could not render cluster %q: %w", opts.clusterName, err)
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), string(payload))
+	return nil
+}
+
+func runDescribeNodes(cmd *cobra.Command, args []string) error {
+	projectID := resolveProject(opts.projectID)
+	if err := requireValues(map[string]string{
+		"project":      projectID,
+		"region":       opts.region,
+		"cluster-name": opts.clusterName,
+	}); err != nil {
+		return err
+	}
+
+	ctx := cmd.Context()
+	client, err := cdapi.NewClient(ctx, opts.clientOptions()...)
+	if err != nil {
+		return err
+	}
+
+	nodes, err := client.ListNodes(ctx, projectID, opts.region, opts.clusterName)
+	if err != nil {
+		return fmt.Errorf("could not list nodes for cluster %q: %w", opts.clusterName, err)
+	}
+
+	payload, err := json.MarshalIndent(cdapi.ListNodesResponse{Nodes: nodes}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("could not render nodes for cluster %q: %w", opts.clusterName, err)
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), string(payload))
 	return nil

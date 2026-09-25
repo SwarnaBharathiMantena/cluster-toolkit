@@ -137,10 +137,17 @@ without registering it:
 The cluster ID is derived from `deployment_name` (`ctkdemo`).
 
 ```shell
+# Show the registered cluster resource
 ./gcluster cluster-director describe \
   --project YOUR_PROJECT_ID --region us-central1 \
   --cluster-name ctkdemo
 
+# List the compute nodes imported into the cluster in Cluster Director
+./gcluster cluster-director describe nodes \
+  --project YOUR_PROJECT_ID --region us-central1 \
+  --cluster-name ctkdemo
+
+# Cross-check the underlying Compute Engine instances matched by label
 gcloud compute instances list --project YOUR_PROJECT_ID \
   --filter="labels.ghpc_deployment:ctkdemo"
 ```

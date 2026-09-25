@@ -210,6 +210,30 @@ func (c *Client) DeleteCluster(ctx context.Context, project, location, clusterID
 	return op, nil
 }
 
+// ListNodes returns all compute nodes associated with a registered cluster,
+// following pagination tokens until all pages have been collected.
+func (c *Client) ListNodes(ctx context.Context, project, location, clusterID string) ([]Node, error) {
+	base := fmt.Sprintf("%s/%s/nodes", c.baseURL(project, location), url.PathEscape(clusterID))
+
+	nodes := []Node{}
+	pageToken := ""
+	for {
+		u := base
+		if pageToken != "" {
+			u = fmt.Sprintf("%s?pageToken=%s", base, url.QueryEscape(pageToken))
+		}
+		var page ListNodesResponse
+		if err := c.do(ctx, http.MethodGet, u, nil, &page); err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, page.Nodes...)
+		if page.NextPageToken == "" {
+			return nodes, nil
+		}
+		pageToken = page.NextPageToken
+	}
+}
+
 // GetOperation polls a long running operation by its resource name.
 func (c *Client) GetOperation(ctx context.Context, name string) (*Operation, error) {
 	u := fmt.Sprintf("%s/%s/%s", normalizeEndpoint(c.endpoint), c.apiVersion, strings.TrimPrefix(name, "/"))
