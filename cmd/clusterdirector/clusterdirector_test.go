@@ -146,3 +146,13 @@ func TestClientOptions(t *testing.T) {
 		t.Errorf("clientOptions() returned %d options, want 2", got)
 	}
 }
+
+func TestDescribeNodesMissingFlags(t *testing.T) {
+	_, err := runCommand(t, "describe", "nodes",
+		"--project", "my-project",
+		"--region", "",
+		"--cluster-name", "")
+	if err == nil || !strings.Contains(err.Error(), "missing required flag(s): --cluster-name, --region") {
+		t.Errorf("describe nodes error = %v, want missing required flag(s)", err)
+	}
+}

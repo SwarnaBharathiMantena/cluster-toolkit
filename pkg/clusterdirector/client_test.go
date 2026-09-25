@@ -175,6 +175,43 @@ func TestDeleteCluster(t *testing.T) {
 	}
 }
 
+func TestListNodes(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if want := "/v1alpha/projects/p/locations/us-central1/clusters/ctkdemo/nodes"; r.URL.Path != want {
+			t.Errorf("ListNodes() path = %s, want %s", r.URL.Path, want)
+		}
+		switch calls {
+		case 1:
+			if r.URL.RawQuery != "" {
+				t.Errorf("first ListNodes() query = %q, want empty", r.URL.RawQuery)
+			}
+			io.WriteString(w, `{"nodes": [{"name": "projects/p/locations/us-central1/clusters/ctkdemo/nodes/ctkdemo-0", "zone": "us-central1-a", "state": "ACTIVE"}], "nextPageToken": "page-2"}`)
+		case 2:
+			if r.URL.RawQuery != "pageToken=page-2" {
+				t.Errorf("second ListNodes() query = %q, want pageToken=page-2", r.URL.RawQuery)
+			}
+			io.WriteString(w, `{"nodes": [{"name": "projects/p/locations/us-central1/clusters/ctkdemo/nodes/ctkdemo-1", "zone": "us-central1-a", "state": "ACTIVE"}]}`)
+		default:
+			t.Fatalf("unexpected extra ListNodes() call #%d", calls)
+		}
+	}))
+	defer srv.Close()
+
+	got, err := testClient(t, srv).ListNodes(context.Background(), "p", "us-central1", "ctkdemo")
+	if err != nil {
+		t.Fatalf("ListNodes() returned an unexpected error: %v", err)
+	}
+	want := []Node{
+		{Name: "projects/p/locations/us-central1/clusters/ctkdemo/nodes/ctkdemo-0", Zone: "us-central1-a", State: "ACTIVE"},
+		{Name: "projects/p/locations/us-central1/clusters/ctkdemo/nodes/ctkdemo-1", Zone: "us-central1-a", State: "ACTIVE"},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("ListNodes() diff (-want +got):\n%s", diff)
+	}
+}
+
 func TestAPIErrors(t *testing.T) {
 	tests := []struct {
 		name            string

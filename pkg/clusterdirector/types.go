@@ -126,6 +126,59 @@ type ExistingInstances struct {
 	Labels map[string]string `json:"labels,omitempty"`
 }
 
+// Node represents a compute node in a Cluster Director cluster as returned by
+// the nodes.list and nodes.get endpoints.
+type Node struct {
+	// Name in the format
+	// `projects/{project}/locations/{location}/clusters/{cluster}/nodes/{node}`.
+	Name                   string                      `json:"name,omitempty"`
+	Zone                   string                      `json:"zone,omitempty"`
+	State                  string                      `json:"state,omitempty"`
+	StateMessage           string                      `json:"stateMessage,omitempty"`
+	RunningJobs            bool                        `json:"runningJobs,omitempty"`
+	AcceptingJobs          bool                        `json:"acceptingJobs,omitempty"`
+	ProvisioningModel      string                      `json:"provisioningModel,omitempty"`
+	SlurmDetails           *SlurmNodeDetails           `json:"slurmDetails,omitempty"`
+	ComputeEngineDetails   *ComputeEngineNodeDetails   `json:"computeEngineDetails,omitempty"`
+	ContainerEngineDetails *ContainerEngineNodeDetails `json:"containerEngineDetails,omitempty"`
+	CreateTime             string                      `json:"createTime,omitempty"`
+	UpdateTime             string                      `json:"updateTime,omitempty"`
+}
+
+// SlurmNodeDetails holds Slurm-specific details for a Node.
+type SlurmNodeDetails struct {
+	States     []string `json:"states,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+	Partitions []string `json:"partitions,omitempty"`
+	Nodeset    string   `json:"nodeset,omitempty"`
+	Comment    string   `json:"comment,omitempty"`
+}
+
+// ComputeEngineNodeDetails holds Compute Engine-specific details for a Node.
+type ComputeEngineNodeDetails struct {
+	Instance             string `json:"instance,omitempty"`
+	MachineType          string `json:"machineType,omitempty"`
+	State                string `json:"state,omitempty"`
+	InstanceGroupManager string `json:"instanceGroupManager,omitempty"`
+	SourceImage          string `json:"sourceImage,omitempty"`
+	InternalIPAddress    string `json:"internalIpAddress,omitempty"`
+	ExternalIPAddress    string `json:"externalIpAddress,omitempty"`
+}
+
+// ContainerEngineNodeDetails holds Google Kubernetes Engine-specific details
+// for a Node.
+type ContainerEngineNodeDetails struct {
+	Pod   string `json:"pod,omitempty"`
+	State string `json:"state,omitempty"`
+}
+
+// ListNodesResponse is the response payload from the Cluster Director
+// nodes.list endpoint.
+type ListNodesResponse struct {
+	Nodes         []Node `json:"nodes"`
+	NextPageToken string `json:"nextPageToken,omitempty"`
+}
+
 // Operation is a google.longrunning.Operation as returned by the Cluster
 // Director API for mutating calls.
 type Operation struct {
