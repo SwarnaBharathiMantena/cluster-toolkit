@@ -43,7 +43,7 @@ const (
 	tfInstanceTemplate = "google_compute_instance_template"
 )
 
-// Discovered holds the registerable resources found in a deployment's
+// Discovered holds the importable resources found in a deployment's
 // Terraform state.
 type Discovered struct {
 	// Networks are VPC names. Cluster Director accepts exactly one, so more
@@ -57,13 +57,13 @@ type Discovered struct {
 	Filestores []string
 	Lustres    []string
 	MIGs       []string
-	// Reservations are the names of reservations the deployment's instances
-	// are pinned to.
+	// Reservations are the reservation, reservation block, or reservation
+	// sub-block references the deployment's instances are pinned to.
 	Reservations []string
 }
 
 // Discover walks Terraform states and collects the resources that can be
-// registered into Cluster Director.
+// imported into Cluster Director.
 //
 // Managed resources are always considered. Data sources are considered only
 // for networks and subnetworks, because reading a VPC that already exists is a
@@ -162,7 +162,7 @@ func (d *Discovered) collect(r *tfjson.StateResource) {
 //	  specific_reservation { key = "...reservation-name" values = ["my-res"] } }
 //
 // Only SPECIFIC_RESERVATION carries a name; ANY_RESERVATION and
-// NO_RESERVATION describe a policy rather than a resource to register.
+// NO_RESERVATION describe a policy rather than a resource to import.
 func reservationNames(r *tfjson.StateResource) []string {
 	var out []string
 	for _, aff := range nestedBlocks(r.AttributeValues, "reservation_affinity") {
@@ -219,7 +219,7 @@ func attrStringSlice(r *tfjson.StateResource, key string) []string {
 	return out
 }
 
-// Subnetwork picks the subnetwork to register. A deployment may define several
+// Subnetwork picks the subnetwork to import. A deployment may define several
 // (the VPC module supports additional subnetworks), but the API accepts one,
 // so the one in the deployment region wins. The result is deterministic:
 // candidates are sorted before choosing.
@@ -248,7 +248,7 @@ func (d Discovered) Subnetwork(region string) (string, bool) {
 	}
 }
 
-// Network picks the VPC to register, reporting whether the choice was
+// Network picks the VPC to import, reporting whether the choice was
 // ambiguous.
 func (d Discovered) Network() (string, bool) {
 	if len(d.Networks) == 0 {

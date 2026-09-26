@@ -29,12 +29,12 @@ import (
 var describeCmd = &cobra.Command{
 	Use:     "describe",
 	Aliases: []string{"get"},
-	Short:   "Show a cluster registered in Cluster Director (or its nodes via 'describe nodes').",
-	Example: `  # Describe the registered cluster resource
+	Short:   "Show a cluster imported in Cluster Director (or its nodes via 'describe nodes').",
+	Example: `  # Describe the imported cluster resource
   gcluster cluster-director describe --project my-project --region us-central1 \
     --cluster-name ctkdemo
 
-  # List the compute nodes associated with the registered cluster
+  # List the compute nodes associated with the imported cluster
   gcluster cluster-director describe nodes --project my-project --region us-central1 \
     --cluster-name ctkdemo`,
 	RunE:         runDescribe,
@@ -45,8 +45,8 @@ var describeNodesCmd = &cobra.Command{
 	Use:     "nodes",
 	Aliases: []string{"node"},
 	Short:   "List the compute nodes associated with a cluster in Cluster Director.",
-	Long: `Query Cluster Director for the compute nodes currently associated with a
-registered cluster (for example, Compute Engine instances matched by the
+	Long: `Query Cluster Director for the compute nodes currently associated with an
+imported cluster (for example, Compute Engine instances matched by the
 deployment's ghpc_deployment label selector, MIGs, or reservations).`,
 	Example: `  gcluster cluster-director describe nodes --project my-project --region us-central1 \
     --cluster-name ctkdemo`,
@@ -69,7 +69,7 @@ func runDescribe(cmd *cobra.Command, args []string) error {
 	}
 
 	ctx := cmd.Context()
-	client, err := cdapi.NewClient(ctx, opts.clientOptions()...)
+	client, err := newClient(ctx, opts.clientOptions()...)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func runDescribeNodes(cmd *cobra.Command, args []string) error {
 	}
 
 	ctx := cmd.Context()
-	client, err := cdapi.NewClient(ctx, opts.clientOptions()...)
+	client, err := newClient(ctx, opts.clientOptions()...)
 	if err != nil {
 		return err
 	}

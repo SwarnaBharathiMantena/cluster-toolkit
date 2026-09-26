@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Package clusterdirector implements the `gcluster cluster-director`
-// subcommands, which register (and deregister) the resources of a Cluster
-// Toolkit deployment into Cluster Director.
+// subcommands, which import (and remove) the resources of a Cluster
+// Toolkit deployment in Cluster Director.
 package clusterdirector
 
 import (
@@ -42,16 +42,19 @@ type options struct {
 	pollInterval time.Duration
 }
 
-var opts options
+var (
+	opts      options
+	newClient = cdapi.NewClient
+)
 
 // ClusterDirectorCmd is the parent command for Cluster Director operations.
 var ClusterDirectorCmd = &cobra.Command{
 	Use:     "cluster-director",
 	Aliases: []string{"cd"},
-	Short:   "[EXPERIMENTAL] Register Cluster Toolkit deployments into Cluster Director.",
-	Long: `Register the networks, filesystems and compute of an existing Cluster Toolkit
+	Short:   "[EXPERIMENTAL] Import Cluster Toolkit deployments into Cluster Director.",
+	Long: `Import the networks, filesystems and compute of an existing Cluster Toolkit
 deployment into Cluster Director, so that the deployment is observable as a
-single cluster. Registration imports pre-existing resources: it never creates
+single cluster. Importing adopts pre-existing resources: it never creates
 or destroys the underlying infrastructure.
 
 This feature is under active development.`,
@@ -69,8 +72,8 @@ func init() {
 	pf.DurationVar(&opts.timeout, "timeout", 30*time.Minute, "Maximum time to wait for the operation when --wait is set.")
 	pf.DurationVar(&opts.pollInterval, "poll-interval", 10*time.Second, "Interval between operation polls when --wait is set.")
 
-	ClusterDirectorCmd.AddCommand(registerCmd)
-	ClusterDirectorCmd.AddCommand(deregisterCmd)
+	ClusterDirectorCmd.AddCommand(importCmd)
+	ClusterDirectorCmd.AddCommand(deleteCmd)
 	ClusterDirectorCmd.AddCommand(describeCmd)
 }
 

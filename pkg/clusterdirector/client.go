@@ -40,11 +40,11 @@ const (
 	AutopushEndpoint = "autopush-hypercomputecluster.sandbox.googleapis.com"
 
 	// DefaultEndpoint is the endpoint used when none is specified. The
-	// registration path is gated by a per-project allowlist rather than by
+	// imported clusters path is gated by a per-project allowlist rather than by
 	// environment, so prod is the right default.
 	DefaultEndpoint = ProdEndpoint
 
-	// DefaultAPIVersion is the API version exposing the registration
+	// DefaultAPIVersion is the API version exposing the imported clusters
 	// (import existing resources) path.
 	DefaultAPIVersion = "v1alpha"
 
@@ -142,7 +142,7 @@ func normalizeEndpoint(endpoint string) string {
 	return "https://" + endpoint
 }
 
-// CreateCluster registers cluster under clusterID. It returns the long
+// CreateCluster imports cluster under clusterID. It returns the long
 // running operation started by the API.
 func (c *Client) CreateCluster(ctx context.Context, project, location, clusterID string, cluster *Cluster) (*Operation, error) {
 	body, err := json.Marshal(cluster)
@@ -158,7 +158,7 @@ func (c *Client) CreateCluster(ctx context.Context, project, location, clusterID
 	return op, nil
 }
 
-// GetCluster reads a registered cluster.
+// GetCluster reads an imported cluster.
 func (c *Client) GetCluster(ctx context.Context, project, location, clusterID string) (*Cluster, error) {
 	u := fmt.Sprintf("%s/%s", c.baseURL(project, location), url.PathEscape(clusterID))
 
@@ -174,12 +174,12 @@ func (c *Client) GetCluster(ctx context.Context, project, location, clusterID st
 // supported by the API, so the paths are listed explicitly.
 const UpdateResourceMask = "network_resources,storage_resources,orchestrator"
 
-// UpdateCluster amends a registered cluster in place. mask selects which
+// UpdateCluster amends an imported cluster in place. mask selects which
 // fields of cluster to write; an empty mask defaults to UpdateResourceMask.
 //
-// This is what keeps a registration current when a deployment grows or shrinks:
-// the cluster ID is stable, so the resource set is patched rather than the
-// cluster being deleted and recreated.
+// This is what keeps an imported cluster current when a deployment grows or
+// shrinks: the cluster ID is stable, so the resource set is patched rather than
+// the cluster being deleted and recreated.
 func (c *Client) UpdateCluster(ctx context.Context, project, location, clusterID string, cluster *Cluster, mask string) (*Operation, error) {
 	if mask == "" {
 		mask = UpdateResourceMask
@@ -198,8 +198,9 @@ func (c *Client) UpdateCluster(ctx context.Context, project, location, clusterID
 	return op, nil
 }
 
-// DeleteCluster deregisters a cluster. Deleting a registered cluster releases
-// the imported resources; it does not destroy them.
+// DeleteCluster removes an imported cluster from Cluster Director. Deleting an
+// imported cluster removes only the Cluster Director record; it does not
+// destroy the underlying GCP resources.
 func (c *Client) DeleteCluster(ctx context.Context, project, location, clusterID string) (*Operation, error) {
 	u := fmt.Sprintf("%s/%s", c.baseURL(project, location), url.PathEscape(clusterID))
 
@@ -210,8 +211,8 @@ func (c *Client) DeleteCluster(ctx context.Context, project, location, clusterID
 	return op, nil
 }
 
-// ListNodes returns all compute nodes associated with a registered cluster,
-// following pagination tokens until all pages have been collected.
+// ListNodes returns all compute nodes associated with a cluster in Cluster
+// Director, following pagination tokens until all pages have been collected.
 func (c *Client) ListNodes(ctx context.Context, project, location, clusterID string) ([]Node, error) {
 	base := fmt.Sprintf("%s/%s/nodes", c.baseURL(project, location), url.PathEscape(clusterID))
 
@@ -358,13 +359,13 @@ func newAPIError(method, u string, code int, payload []byte) *APIError {
 }
 
 // IsAlreadyExists reports whether err indicates that the cluster is already
-// registered, which makes registration idempotent.
+// imported, which makes importing idempotent.
 func IsAlreadyExists(err error) bool {
 	return hasStatus(err, http.StatusConflict, "ALREADY_EXISTS")
 }
 
 // IsNotFound reports whether err indicates that the cluster is not (or no
-// longer) registered, which makes deregistration idempotent.
+// longer) imported, which makes deletion idempotent.
 func IsNotFound(err error) bool {
 	return hasStatus(err, http.StatusNotFound, "NOT_FOUND")
 }

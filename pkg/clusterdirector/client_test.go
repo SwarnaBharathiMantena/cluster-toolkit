@@ -387,3 +387,91 @@ func TestWithEndpointResolvesAlias(t *testing.T) {
 		t.Errorf("baseURL() = %q, want %q", got, want)
 	}
 }
+
+func TestWithAPIVersion(t *testing.T) {
+	client, err := NewClient(context.Background(), WithAPIVersion("v1"), WithAPIVersion(""), WithHTTPClient(http.DefaultClient))
+	if err != nil {
+		t.Fatalf("NewClient() returned an unexpected error: %v", err)
+	}
+	want := "https://" + ProdEndpoint + "/v1/projects/p/locations/us-central1/clusters"
+	if got := client.baseURL("p", "us-central1"); got != want {
+		t.Errorf("baseURL() = %q, want %q", got, want)
+	}
+}
+
+func TestWaitForOperationImmediateReturns(t *testing.T) {
+	c := &Client{}
+	if op, err := c.WaitForOperation(context.Background(), nil, 0, 0); op != nil || err != nil {
+		t.Errorf("WaitForOperation(nil) = (%v, %v), want (nil, nil)", op, err)
+	}
+	doneOp := &Operation{Name: "operations/op-done", Done: true}
+	if op, err := c.WaitForOperation(context.Background(), doneOp, 0, 0); op != doneOp || err != nil {
+		t.Errorf("WaitForOperation(doneOp) = (%v, %v), want (%v, nil)", op, err, doneOp)
+	}
+	errOp := &Operation{Name: "operations/op-err", Done: true, Error: &Status{Code: 13, Message: "internal"}}
+	if _, err := c.WaitForOperation(context.Background(), errOp, 0, 0); err == nil || !strings.Contains(err.Error(), "internal") {
+		t.Errorf("WaitForOperation(errOp) error = %v, want internal error", err)
+	}
+}
+
+func TestWaitForOperationPollError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		io.WriteString(w, `{"error": {"code": 500, "message": "backend down", "status": "INTERNAL"}}`)
+	}))
+	defer srv.Close()
+
+	_, err := testClient(t, srv).WaitForOperation(context.Background(),
+		&Operation{Name: "operations/op-1"}, time.Millisecond, time.Minute)
+	if err == nil || !strings.Contains(err.Error(), "backend down") {
+		t.Errorf("WaitForOperation() error = %v, want backend down", err)
+	}
+}
+
+func TestClientMethodErrorsAndEmptyOrInvalidBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1alpha/projects/p/locations/us-central1/clusters/empty":
+			w.WriteHeader(http.StatusOK)
+		case "/v1alpha/projects/p/locations/us-central1/clusters/badjson":
+			io.WriteString(w, `{not-json`)
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			io.WriteString(w, `{"error": {"code": 400, "message": "bad request", "status": "INVALID_ARGUMENT"}}`)
+		}
+	}))
+	defer srv.Close()
+
+	c := testClient(t, srv)
+	ctx := context.Background()
+
+	if _, err := c.GetCluster(ctx, "p", "us-central1", "empty"); err != nil {
+		t.Errorf("GetCluster(empty) returned unexpected error: %v", err)
+	}
+	if _, err := c.GetCluster(ctx, "p", "us-central1", "badjson"); err == nil || !strings.Contains(err.Error(), "could not decode") {
+		t.Errorf("GetCluster(badjson) error = %v, want decode error", err)
+	}
+	if _, err := c.GetCluster(ctx, "p", "us-central1", "err"); err == nil {
+		t.Error("GetCluster(err) succeeded, want error")
+	}
+	if _, err := c.UpdateCluster(ctx, "p", "us-central1", "err", &Cluster{}, ""); err == nil {
+		t.Error("UpdateCluster(err) succeeded, want error")
+	}
+	if _, err := c.DeleteCluster(ctx, "p", "us-central1", "err"); err == nil {
+		t.Error("DeleteCluster(err) succeeded, want error")
+	}
+	if _, err := c.ListNodes(ctx, "p", "us-central1", "err"); err == nil {
+		t.Error("ListNodes(err) succeeded, want error")
+	}
+}
+
+func TestHasStatusMatchesByStatusString(t *testing.T) {
+	err := &APIError{StatusCode: http.StatusBadRequest, Status: &Status{Status: "ALREADY_EXISTS"}}
+	if !IsAlreadyExists(err) {
+		t.Error("IsAlreadyExists() = false for Status=ALREADY_EXISTS, want true")
+	}
+	if IsAlreadyExists(context.Canceled) {
+		t.Error("IsAlreadyExists(context.Canceled) = true, want false")
+	}
+}
+

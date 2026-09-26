@@ -24,7 +24,7 @@ import (
 const (
 	// DeploymentLabel is the label that the Cluster Toolkit stamps on every
 	// resource it creates. It is used to select the instances belonging to a
-	// deployment when registering them into Cluster Director.
+	// deployment when importing them into Cluster Director.
 	DeploymentLabel = "ghpc_deployment"
 
 	// NetworkResourceKey is the key used for the VPC imported from the
@@ -66,7 +66,7 @@ var (
 )
 
 // Spec captures the outputs of a Cluster Toolkit deployment that should be
-// registered as a single cluster in Cluster Director.
+// imported as a single cluster in Cluster Director.
 type Spec struct {
 	// ProjectID hosting the deployment, e.g. "my-project".
 	ProjectID string
@@ -74,7 +74,7 @@ type Spec struct {
 	// used to qualify the subnetwork.
 	Region string
 	// Zone of the deployment, e.g. "us-central1-a". Only required to qualify
-	// bare reservation names.
+	// reservation references that do not already include a zone.
 	Zone string
 	// ClusterName is the Cluster Director cluster ID to create.
 	ClusterName string
@@ -101,8 +101,9 @@ type Spec struct {
 	// MIGs are managed instance group self links or partial URLs, typically
 	// $(mig.self_link). Both zonal and regional MIGs are supported.
 	MIGs []string
-	// Reservations are reservation names or partial URLs. Bare names are
-	// qualified with ProjectID and Zone.
+	// Reservations are reservation, reservation block, or reservation
+	// sub-block names or resource paths. Unqualified references are qualified
+	// with ProjectID and Zone.
 	Reservations []string
 
 	// ClusterLabels are labels applied to the Cluster Director cluster.
@@ -112,8 +113,8 @@ type Spec struct {
 	InstanceLabels map[string]string
 }
 
-// Validate reports whether the spec contains everything needed to build a
-// registration payload.
+// Validate reports whether the spec contains everything needed to build an
+// import payload.
 func (s Spec) Validate() error {
 	var missing []string
 	if s.ProjectID == "" {
@@ -135,17 +136,18 @@ func (s Spec) Validate() error {
 		return fmt.Errorf("network and subnetwork must be provided together, got network=%q subnetwork=%q", s.NetworkName, s.SubnetName)
 	}
 	if len(s.instanceLabels()) == 0 && len(s.MIGs) == 0 && len(s.Reservations) == 0 {
-		return fmt.Errorf("no compute to register: provide a deployment name, at least one MIG or at least one reservation")
+		return fmt.Errorf("no compute to import: provide a deployment name, at least one MIG or at least one reservation")
 	}
 	return s.validateReservations()
 }
 
-// validateReservations reports whether every reservation can be qualified
-// into a full resource path.
+// validateReservations reports whether every reservation reference can be
+// qualified into a full reservation, reservation block, or reservation
+// sub-block resource path.
 func (s Spec) validateReservations() error {
 	for _, r := range s.Reservations {
-		if isBareName(r) && s.Zone == "" {
-			return fmt.Errorf("reservation %q is a bare name, a zone is required to qualify it", r)
+		if _, err := parseReservation(s.ProjectID, s.Zone, r); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -244,7 +246,8 @@ func (s Spec) storageResources() (map[string]StorageResource, error) {
 }
 
 // existingInstances renders the compute of the deployment: label selected
-// instances, managed instance groups and reservations.
+// instances, managed instance groups and reservations (including reservation
+// blocks and sub-blocks).
 func (s Spec) existingInstances() (map[string]ExistingInstances, error) {
 	instances := map[string]ExistingInstances{}
 
@@ -267,11 +270,11 @@ func (s Spec) existingInstances() (map[string]ExistingInstances, error) {
 		}
 	}
 	for i, r := range s.Reservations {
-		res, err := normalizeReservation(s.ProjectID, s.Zone, r)
+		entry, err := parseReservation(s.ProjectID, s.Zone, r)
 		if err != nil {
 			return nil, err
 		}
-		instances[indexedKey("ctk-reservation", i)] = ExistingInstances{Reservation: res}
+		instances[indexedKey("ctk-reservation", i)] = entry
 	}
 	return instances, nil
 }
@@ -329,12 +332,6 @@ func qualifiedLeaf(s string) string {
 	return s
 }
 
-// isBareName reports whether s is a plain resource name rather than a
-// (partial) resource path.
-func isBareName(s string) bool {
-	return !strings.Contains(strings.TrimSpace(s), "/")
-}
-
 // normalizeBucket strips the optional gs:// scheme from a bucket name.
 func normalizeBucket(b string) (string, error) {
 	b = strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(b), "gs://"), "/")
@@ -385,25 +382,60 @@ func normalizeMIG(mig string) (string, bool, error) {
 	}
 }
 
-// normalizeReservation qualifies a bare reservation name with the project and
-// zone, and reduces self links to a `projects/...` reference.
-func normalizeReservation(project, zone, reservation string) (string, error) {
-	reservation = strings.Trim(strings.TrimSpace(reservation), "/")
-	if reservation == "" {
-		return "", fmt.Errorf("empty reservation")
+// parseReservation qualifies a reservation, reservation block, or reservation
+// sub-block reference and returns the corresponding ExistingInstances entry.
+//
+// Supported input forms:
+//   - bare or relative: "{res}[/reservationBlocks/{block}[/reservationSubBlocks/{sub_block}]]"
+//   - GCE affinity path: "projects/{project}/reservations/{res}[/reservationBlocks/{block}[/reservationSubBlocks/{sub_block}]]"
+//   - full resource path or self link: "projects/{project}/zones/{zone}/reservations/{res}[/reservationBlocks/{block}[/reservationSubBlocks/{sub_block}]]"
+func parseReservation(project, zone, reservation string) (ExistingInstances, error) {
+	raw := strings.Trim(strings.TrimSpace(reservation), "/")
+	if raw == "" {
+		return ExistingInstances{}, fmt.Errorf("empty reservation")
 	}
-	if isBareName(reservation) {
+	cleaned := computeAPIPrefix.ReplaceAllString(raw, "")
+	parts := strings.Split(cleaned, "/")
+
+	switch {
+	case parts[0] != "projects":
 		if zone == "" {
-			return "", fmt.Errorf("reservation %q is a bare name, a zone is required to qualify it", reservation)
+			return ExistingInstances{}, fmt.Errorf("reservation %q is not zone-qualified, a zone is required to qualify it", reservation)
 		}
-		return fmt.Sprintf("projects/%s/zones/%s/reservations/%s", project, zone, reservation), nil
+		if parts[0] == "reservations" {
+			parts = append([]string{"projects", project, "zones", zone}, parts...)
+		} else {
+			parts = append([]string{"projects", project, "zones", zone, "reservations"}, parts...)
+		}
+	case len(parts) >= 4 && parts[0] == "projects" && parts[2] == "reservations":
+		// Shared-project reservation affinity values omit "/zones/{zone}".
+		if zone == "" {
+			return ExistingInstances{}, fmt.Errorf("reservation %q is not zone-qualified, a zone is required to qualify it", reservation)
+		}
+		qualified := make([]string, 0, len(parts)+2)
+		qualified = append(qualified, "projects", parts[1], "zones", zone)
+		qualified = append(qualified, parts[2:]...)
+		parts = qualified
 	}
-	reservation = computeAPIPrefix.ReplaceAllString(reservation, "")
-	parts := strings.Split(reservation, "/")
-	if len(parts) != 6 || parts[0] != "projects" || parts[2] != "zones" || parts[4] != "reservations" {
-		return "", fmt.Errorf("reservation %q must be a bare name or of the form projects/{project}/zones/{zone}/reservations/{reservation}", reservation)
+
+	validBase := len(parts) >= 6 &&
+		parts[0] == "projects" && parts[1] != "" &&
+		parts[2] == "zones" && parts[3] != "" &&
+		parts[4] == "reservations" && parts[5] != ""
+
+	if validBase {
+		path := strings.Join(parts, "/")
+		switch {
+		case len(parts) == 6:
+			return ExistingInstances{Reservation: path}, nil
+		case len(parts) == 8 && parts[6] == "reservationBlocks" && parts[7] != "":
+			return ExistingInstances{ReservationBlock: path}, nil
+		case len(parts) == 10 && parts[6] == "reservationBlocks" && parts[7] != "" && parts[8] == "reservationSubBlocks" && parts[9] != "":
+			return ExistingInstances{ReservationSubBlock: path}, nil
+		}
 	}
-	return reservation, nil
+
+	return ExistingInstances{}, fmt.Errorf("reservation %q must be a bare name or of the form projects/{project}/zones/{zone}/reservations/{reservation}[/reservationBlocks/{block}[/reservationSubBlocks/{sub_block}]]", reservation)
 }
 
 // SplitList splits a comma (or whitespace) separated list into its non-empty

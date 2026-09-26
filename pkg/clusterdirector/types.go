@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package clusterdirector registers resources deployed by the Cluster Toolkit
+// Package clusterdirector imports resources deployed by the Cluster Toolkit
 // into Cluster Director (the Hypercompute Cluster API), so that an existing
 // Cluster Toolkit deployment shows up as a single cluster in Cluster Director.
 //
@@ -107,9 +107,10 @@ type ComputeEngineOrchestrator struct {
 }
 
 // ExistingInstances selects a group of pre-existing Compute Engine instances.
-// Exactly one source (Project, InstanceGroupManager,
-// RegionInstanceGroupManager or Reservation) must be set; Labels further
-// filters the instances read from that source.
+// At most one source (Project, InstanceGroupManager,
+// RegionInstanceGroupManager, Reservation, ReservationBlock or
+// ReservationSubBlock) may be set; Labels further filters the instances read
+// from that source.
 type ExistingInstances struct {
 	// Project in the format `projects/{project}`.
 	Project string `json:"project,omitempty"`
@@ -122,6 +123,12 @@ type ExistingInstances struct {
 	// Reservation in the format
 	// `projects/{project}/zones/{zone}/reservations/{reservation}`.
 	Reservation string `json:"reservation,omitempty"`
+	// ReservationBlock in the format
+	// `projects/{project}/zones/{zone}/reservations/{reservation}/reservationBlocks/{reservation_block}`.
+	ReservationBlock string `json:"reservationBlock,omitempty"`
+	// ReservationSubBlock in the format
+	// `projects/{project}/zones/{zone}/reservations/{reservation}/reservationBlocks/{reservation_block}/reservationSubBlocks/{reservation_sub_block}`.
+	ReservationSubBlock string `json:"reservationSubBlock,omitempty"`
 	// Labels that an instance must carry to be included.
 	Labels map[string]string `json:"labels,omitempty"`
 }

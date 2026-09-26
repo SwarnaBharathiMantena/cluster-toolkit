@@ -105,7 +105,7 @@ func TestDiscoverIgnoresLookalikeResourceTypes(t *testing.T) {
 }
 
 func TestDiscoverDataSourcePolicy(t *testing.T) {
-	// A pre-existing VPC is read, not created, and must still be registered.
+	// A pre-existing VPC is read, not created, and must still be imported.
 	// An incidentally read bucket must not be.
 	st := state(&tfjson.StateModule{
 		Resources: []*tfjson.StateResource{
@@ -176,14 +176,23 @@ func TestDiscoverFindsReservationsFromAffinity(t *testing.T) {
 		managed(tfInstance, affinity("SPECIFIC_RESERVATION", "my-reservation")),
 		managed(tfInstance, affinity("SPECIFIC_RESERVATION", "my-reservation")), // dedupe
 		managed(tfInstanceTemplate, affinity("SPECIFIC_RESERVATION", "mig-reservation")),
-		// Not a named reservation: a policy, nothing to register.
+		// Not a named reservation: a policy, nothing to import.
 		managed(tfInstance, affinity("ANY_RESERVATION", "ignored")),
+		// Single (non-repeated) map block form is tolerated too.
+		managed(tfInstance, map[string]any{
+			"reservation_affinity": map[string]any{
+				"type": "SPECIFIC_RESERVATION",
+				"specific_reservation": map[string]any{
+					"values": []any{"single-block-res"},
+				},
+			},
+		}),
 		// No affinity at all, the common case.
 		managed(tfInstance, map[string]any{"name": "plain-vm"}),
 	}})
 
 	got := Discover([]*tfjson.State{st})
-	want := []string{"mig-reservation", "my-reservation"}
+	want := []string{"mig-reservation", "my-reservation", "single-block-res"}
 	if !reflect.DeepEqual(got.Reservations, want) {
 		t.Errorf("Reservations = %v, want %v", got.Reservations, want)
 	}

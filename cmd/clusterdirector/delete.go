@@ -23,23 +23,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var deregisterCmd = &cobra.Command{
-	Use:     "deregister",
-	Aliases: []string{"unregister"},
-	Short:   "Remove a Cluster Toolkit deployment from Cluster Director.",
-	Long: `Delete a registered cluster from Cluster Director.
+var deleteCmd = &cobra.Command{
+	Use:   "delete",
+	Short: "Delete an imported Cluster Toolkit deployment from Cluster Director.",
+	Long: `Delete an imported cluster from Cluster Director.
 
-Only the registration is removed: the imported networks, filesystems and
-instances keep running and remain managed by the Cluster Toolkit deployment.
-Deregistration is idempotent, so it is safe to run it from the destroy path of
-a deployment group.`,
-	Example: `  gcluster cluster-director deregister --project my-project --region us-central1 \
-    --cluster-name ctktest --wait`,
-	RunE:         runDeregister,
+Only the Cluster Director cluster record is deleted: the imported networks,
+filesystems and instances keep running and remain managed by the Cluster
+Toolkit deployment. Deletion is idempotent, so it is safe to run it from the
+destroy path of a deployment group.`,
+	Example: `  gcluster cluster-director delete --project my-project --region us-central1 \
+    --cluster-name ctkdemo --wait`,
+	RunE:         runDelete,
 	SilenceUsage: true,
 }
 
-func runDeregister(cmd *cobra.Command, args []string) error {
+func runDelete(cmd *cobra.Command, args []string) error {
 	projectID := resolveProject(opts.projectID)
 	if err := requireValues(map[string]string{
 		"project":      projectID,
@@ -50,20 +49,20 @@ func runDeregister(cmd *cobra.Command, args []string) error {
 	}
 
 	ctx := cmd.Context()
-	client, err := cdapi.NewClient(ctx, opts.clientOptions()...)
+	client, err := newClient(ctx, opts.clientOptions()...)
 	if err != nil {
 		return err
 	}
 
-	logging.Info("Deregistering cluster %q from Cluster Director in %s/%s...", opts.clusterName, projectID, opts.region)
+	logging.Info("Deleting imported cluster %q from Cluster Director in %s/%s...", opts.clusterName, projectID, opts.region)
 	op, err := client.DeleteCluster(ctx, projectID, opts.region, opts.clusterName)
 	if err != nil {
 		if cdapi.IsNotFound(err) {
-			logging.Info("Cluster %q is not registered, nothing to do.", opts.clusterName)
+			logging.Info("Cluster %q is not found in Cluster Director, nothing to do.", opts.clusterName)
 			return nil
 		}
-		return fmt.Errorf("could not deregister cluster %q: %w", opts.clusterName, err)
+		return fmt.Errorf("could not delete imported cluster %q: %w", opts.clusterName, err)
 	}
 
-	return reportOperation(cmd, client, op, fmt.Sprintf("Deregistered cluster %q", opts.clusterName))
+	return reportOperation(cmd, client, op, fmt.Sprintf("Deleted imported cluster %q", opts.clusterName))
 }

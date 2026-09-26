@@ -76,7 +76,13 @@ func TestClusterComprehensive(t *testing.T) {
 		"https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/instanceGroupManagers/mig-pool",
 		"projects/my-project/regions/us-central1/instanceGroupManagers/regional-pool",
 	}
-	spec.Reservations = []string{"my-reservation"}
+	spec.Reservations = []string{
+		"my-reservation",
+		"reservations/exr-zero",
+		"exr-one/reservationBlocks/block-1",
+		"projects/shared-project/reservations/exr-two/reservationBlocks/block-2/reservationSubBlocks/subblock-1",
+		"projects/my-project/zones/us-central1-a/reservations/exr-three/reservationBlocks/block-3",
+	}
 	spec.ClusterLabels = map[string]string{"env": "dev"}
 
 	got, err := spec.Cluster()
@@ -102,6 +108,10 @@ func TestClusterComprehensive(t *testing.T) {
 		"ctk-mig-0":         {InstanceGroupManager: "projects/my-project/zones/us-central1-a/instanceGroupManagers/mig-pool"},
 		"ctk-mig-1":         {RegionInstanceGroupManager: "projects/my-project/regions/us-central1/instanceGroupManagers/regional-pool"},
 		"ctk-reservation-0": {Reservation: "projects/my-project/zones/us-central1-a/reservations/my-reservation"},
+		"ctk-reservation-1": {Reservation: "projects/my-project/zones/us-central1-a/reservations/exr-zero"},
+		"ctk-reservation-2": {ReservationBlock: "projects/my-project/zones/us-central1-a/reservations/exr-one/reservationBlocks/block-1"},
+		"ctk-reservation-3": {ReservationSubBlock: "projects/shared-project/zones/us-central1-a/reservations/exr-two/reservationBlocks/block-2/reservationSubBlocks/subblock-1"},
+		"ctk-reservation-4": {ReservationBlock: "projects/my-project/zones/us-central1-a/reservations/exr-three/reservationBlocks/block-3"},
 	}
 	if diff := cmp.Diff(wantInstances, got.Orchestrator.ComputeEngine.ExistingInstances); diff != "" {
 		t.Errorf("Cluster() existing instances diff (-want +got):\n%s", diff)
@@ -152,11 +162,20 @@ func TestClusterErrors(t *testing.T) {
 		{"hyphenated cluster name", func(s *Spec) { s.ClusterName = "ctk-test" }, "no hyphens"},
 		{"long cluster name", func(s *Spec) { s.ClusterName = "ctkclusterdemo" }, "at most 10 characters"},
 		{"subnet without network", func(s *Spec) { s.NetworkName = "" }, "must be provided together"},
-		{"no compute", func(s *Spec) { s.DeploymentName = "" }, "no compute to register"},
+		{"no compute", func(s *Spec) { s.DeploymentName = "" }, "no compute to import"},
 		{"bare reservation without zone", func(s *Spec) { s.Zone = ""; s.Reservations = []string{"res"} }, "a zone is required"},
+		{"relative reservation block without zone", func(s *Spec) { s.Zone = ""; s.Reservations = []string{"res/reservationBlocks/b1"} }, "a zone is required"},
+		{"shared reservation without zone", func(s *Spec) { s.Zone = ""; s.Reservations = []string{"projects/p/reservations/res"} }, "a zone is required"},
+		{"empty reservation", func(s *Spec) { s.Reservations = []string{" "} }, "empty reservation"},
+		{"malformed reservation path", func(s *Spec) { s.Reservations = []string{"projects/p/zones/z/instances/i"} }, "must be a bare name or of the form"},
+		{"empty bucket", func(s *Spec) { s.Buckets = []string{"gs://"} }, "empty bucket name"},
 		{"bucket with path", func(s *Spec) { s.Buckets = []string{"bucket/with/path"} }, "must be a bare bucket name"},
+		{"empty filestore", func(s *Spec) { s.Filestores = []string{" "} }, "empty filestore instance ID"},
 		{"short filestore", func(s *Spec) { s.Filestores = []string{"my-filestore"} }, "must be of the form"},
+		{"short lustre", func(s *Spec) { s.Lustres = []string{"my-lustre"} }, "must be of the form"},
+		{"empty mig", func(s *Spec) { s.MIGs = []string{" "} }, "empty managed instance group"},
 		{"bad mig", func(s *Spec) { s.MIGs = []string{"projects/p/zones/z/instances/i"} }, "must be of the form"},
+		{"bad mig scope", func(s *Spec) { s.MIGs = []string{"projects/p/global/loc/instanceGroupManagers/m"} }, "must be scoped by `zones` or `regions`"},
 	}
 
 	for _, tc := range tests {
